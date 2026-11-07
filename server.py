@@ -122,32 +122,39 @@ class MusicHostHandler(http.server.BaseHTTPRequestHandler):
     def handle_search(self, query):
         q = query.get("q", [""])[0]
         source = query.get("source", ["netease"])[0]
-        page = query.get("page", ["1"])[0]
+        try:
+            page = max(1, int(query.get("page", ["1"])[0]))
+        except ValueError:
+            page = 1
+        try:
+            count = max(10, min(100, int(query.get("count", ["50"])[0])))
+        except ValueError:
+            count = 50
 
         if not q:
             self.send_json({"success": True, "data": []})
             return
 
         # 1. Try GDStudio first
-        songs = self.search_gdstudio(q, source, page)
+        songs = self.search_gdstudio(q, source, page, min(count, 50))
         if songs:
-            self.send_json({"success": True, "data": songs, "engine": "gdstudio"})
+            self.send_json({"success": True, "data": songs, "engine": "gdstudio", "page": page, "count": len(songs)})
             return
 
         # 2. Fallback to Direct NetEase CloudSearch (Never blocked by Cloudflare!)
         print(f"GDStudio failed or blocked for '{q}'. Falling back to NetEase direct search...")
-        songs = self.search_netease_direct(q)
+        songs = self.search_netease_direct(q, page, count)
         if songs:
-            self.send_json({"success": True, "data": songs, "engine": "netease_direct"})
+            self.send_json({"success": True, "data": songs, "engine": "netease_direct", "page": page, "count": len(songs)})
             return
 
         # 3. Fallback to Kuwo direct search
         print(f"Falling back to Kuwo search for '{q}'...")
-        songs = self.search_kuwo_direct(q)
-        self.send_json({"success": True, "data": songs, "engine": "kuwo_direct"})
+        songs = self.search_kuwo_direct(q, page, count)
+        self.send_json({"success": True, "data": songs, "engine": "kuwo_direct", "page": page, "count": len(songs)})
 
-    def search_gdstudio(self, q: str, source: str, page: str) -> List[Dict[str, Any]]:
-        api_url = f"{API_BASE}?types=search&source={source}&name={urllib.parse.quote(q)}&count=25&pages={page}"
+    def search_gdstudio(self, q: str, source: str, page: int = 1, count: int = 50) -> List[Dict[str, Any]]:
+        api_url = f"{API_BASE}?types=search&source={source}&name={urllib.parse.quote(q)}&count={count}&pages={page}"
         try:
             req = urllib.request.Request(api_url, headers=BROWSER_HEADERS)
             with urllib.request.urlopen(req, timeout=6) as r:
@@ -159,13 +166,14 @@ class MusicHostHandler(http.server.BaseHTTPRequestHandler):
             print(f"GDStudio search error: {e}")
         return []
 
-    def search_netease_direct(self, q: str) -> List[Dict[str, Any]]:
+    def search_netease_direct(self, q: str, page: int = 1, count: int = 50) -> List[Dict[str, Any]]:
+        offset = max(0, (page - 1) * count)
         url = "https://music.163.com/api/cloudsearch/pc"
         data = urllib.parse.urlencode({
             "s": q,
             "type": 1,
-            "offset": 0,
-            "limit": 25
+            "offset": offset,
+            "limit": count
         }).encode("utf-8")
         req = urllib.request.Request(url, data=data, headers={
             "User-Agent": BROWSER_HEADERS["User-Agent"],
@@ -196,8 +204,9 @@ class MusicHostHandler(http.server.BaseHTTPRequestHandler):
             print(f"NetEase direct search error: {e}")
         return []
 
-    def search_kuwo_direct(self, q: str) -> List[Dict[str, Any]]:
-        url = f"http://search.kuwo.cn/r.s?client=kt&all={urllib.parse.quote(q)}&rformat=json&encoding=utf8&rn=25&pn=0"
+    def search_kuwo_direct(self, q: str, page: int = 1, count: int = 50) -> List[Dict[str, Any]]:
+        pn = max(0, page - 1)
+        url = f"http://search.kuwo.cn/r.s?client=kt&all={urllib.parse.quote(q)}&rformat=json&encoding=utf8&rn={count}&pn={pn}"
         try:
             req = urllib.request.Request(url, headers={"User-Agent": BROWSER_HEADERS["User-Agent"]})
             with urllib.request.urlopen(req, timeout=6) as r:

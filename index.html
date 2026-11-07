@@ -513,6 +513,27 @@
       to { transform: rotate(360deg); }
     }
 
+    /* Load More Button */
+    .load-more-btn {
+      display: none;
+      width: 100%;
+      margin: 16px 0 24px;
+      padding: 13px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      color: #fff;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.2s;
+    }
+    .load-more-btn:active {
+      background: rgba(255, 255, 255, 0.16);
+      transform: scale(0.98);
+    }
+
     /* Action Sheet (Download Format Picker) */
     .action-sheet-backdrop {
       position: fixed;
@@ -730,11 +751,14 @@
     <!-- Song List Container -->
     <div class="song-list" id="songList"></div>
 
+    <!-- Load More Button -->
+    <button class="load-more-btn" id="btnLoadMore">Load More Songs</button>
+
     <!-- Empty State -->
     <div class="empty-state" id="emptyState">
       <div class="empty-icon">🎧</div>
-      <div style="font-size: 17px; font-weight: 600; margin-bottom: 6px;">Type above to search</div>
-      <div style="font-size: 13px;">Stream or tap ⬇ to download FLAC songs directly onto your phone</div>
+      <div style="font-size: 17px; font-weight: 600; margin-bottom: 6px;">Search any song, artist, or album</div>
+      <div style="font-size: 13px;">Stream Hi-Res audio or tap ⬇ to download FLAC & MP3 directly to your device</div>
     </div>
   </div>
 
@@ -838,6 +862,9 @@
     let currentIndex = -1;
     let isPlaying = false;
     let parsedLyrics = [];
+    let currentSearchQuery = '';
+    let currentPage = 1;
+    let isLoadingMore = false;
 
     const searchInput = document.getElementById('searchInput');
     const searchClear = document.getElementById('searchClear');
@@ -848,6 +875,7 @@
     const resultCount = document.getElementById('resultCount');
     const sectionLabel = document.getElementById('sectionLabel');
     const ambientBg = document.getElementById('ambientBg');
+    const btnLoadMore = document.getElementById('btnLoadMore');
 
     // Player Elements
     const audio = document.getElementById('audioPlayer');
@@ -884,6 +912,7 @@
         tabBtns.forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         currentSource = btn.dataset.source;
+        btnLoadMore.style.display = 'none';
         if (currentSource === 'local') {
           loadLocalSongs();
         } else if (searchInput.value.trim()) {
@@ -901,6 +930,8 @@
         songList.innerHTML = '';
         emptyState.style.display = 'block';
         resultCount.textContent = '';
+        btnLoadMore.style.display = 'none';
+        currentSearchQuery = '';
         return;
       }
       searchTimeout = setTimeout(() => {
@@ -921,40 +952,94 @@
       songList.innerHTML = '';
       emptyState.style.display = 'block';
       resultCount.textContent = '';
+      btnLoadMore.style.display = 'none';
+      currentSearchQuery = '';
       searchInput.focus();
     });
 
-    // Perform Search
-    async function doSearch(query) {
+    // Perform Search with pagination
+    async function doSearch(query, page = 1, append = false) {
       if (currentSource === 'local') return;
-      spinner.style.display = 'block';
-      emptyState.style.display = 'none';
-      songList.innerHTML = '';
-      sectionLabel.textContent = `Search results for "${query}"`;
+
+      if (!append) {
+        currentSearchQuery = query;
+        currentPage = 1;
+        currentSongs = [];
+        btnLoadMore.style.display = 'none';
+        spinner.style.display = 'block';
+        emptyState.style.display = 'none';
+        songList.innerHTML = '';
+        sectionLabel.textContent = `Search results for "${query}"`;
+      } else {
+        isLoadingMore = true;
+        btnLoadMore.textContent = 'Loading more songs...';
+        btnLoadMore.disabled = true;
+      }
 
       try {
-        const res = await fetch(`/api/search?q=${encodeURIComponent(query)}&source=${currentSource}`);
+        const res = await fetch(`/api/search?q=${encodeURIComponent(query)}&source=${currentSource}&page=${page}&count=50`);
         const json = await res.json();
-        spinner.style.display = 'none';
 
-        if (json.success && Array.isArray(json.data) && json.data.length > 0) {
-          currentSongs = json.data;
-          resultCount.textContent = `${json.data.length} songs`;
-          renderSongList(json.data);
+        if (!append) {
+          spinner.style.display = 'none';
+          if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+            currentSongs = json.data;
+            resultCount.textContent = `${currentSongs.length} songs`;
+            renderSongList(currentSongs);
+            if (json.data.length >= 25) {
+              btnLoadMore.style.display = 'block';
+              btnLoadMore.textContent = 'Load More Songs';
+              btnLoadMore.disabled = false;
+            } else {
+              btnLoadMore.style.display = 'none';
+            }
+          } else {
+            songList.innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div><div>No songs found for "${escapeHtml(query)}"</div></div>`;
+            resultCount.textContent = '0 songs';
+            btnLoadMore.style.display = 'none';
+          }
         } else {
-          songList.innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div><div>No songs found</div></div>`;
-          resultCount.textContent = '0 songs';
+          isLoadingMore = false;
+          btnLoadMore.disabled = false;
+          if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+            const startIdx = currentSongs.length;
+            currentSongs = currentSongs.concat(json.data);
+            resultCount.textContent = `${currentSongs.length} songs`;
+            appendSongCards(json.data, startIdx);
+            if (json.data.length >= 20) {
+              btnLoadMore.style.display = 'block';
+              btnLoadMore.textContent = 'Load More Songs';
+            } else {
+              btnLoadMore.style.display = 'none';
+            }
+          } else {
+            btnLoadMore.style.display = 'none';
+          }
         }
       } catch (err) {
-        spinner.style.display = 'none';
-        songList.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><div>Network error: ${err.message}</div></div>`;
+        if (!append) {
+          spinner.style.display = 'none';
+          songList.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><div>Network error: ${err.message}</div></div>`;
+        } else {
+          isLoadingMore = false;
+          btnLoadMore.disabled = false;
+          btnLoadMore.textContent = 'Load More Failed (Tap to retry)';
+        }
       }
     }
+
+    // Load More Button Click
+    btnLoadMore.addEventListener('click', () => {
+      if (isLoadingMore || !currentSearchQuery) return;
+      currentPage++;
+      doSearch(currentSearchQuery, currentPage, true);
+    });
 
     // Load Local Mac Songs
     async function loadLocalSongs() {
       spinner.style.display = 'block';
       emptyState.style.display = 'none';
+      btnLoadMore.style.display = 'none';
       songList.innerHTML = '';
       sectionLabel.textContent = "Mac ~/Music Library";
 
@@ -983,48 +1068,57 @@
       }
     }
 
+    // Create a Song Card Element
+    function createSongCard(song, idx) {
+      const card = document.createElement('div');
+      card.className = `song-card ${idx === currentIndex ? 'playing' : ''}`;
+      card.dataset.index = idx;
+
+      const artistName = Array.isArray(song.artist) ? song.artist.join(' / ') : (song.artist || 'Unknown');
+      const picUrl = song.pic_url || (song.pic_id ? `/api/pic?source=${song.source || currentSource}&id=${encodeURIComponent(song.pic_id)}` : 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect fill="%23222" width="100" height="100"/><text y=".7em" font-size="70" x="15" fill="%23555">🎵</text></svg>');
+
+      card.innerHTML = `
+        <img src="${picUrl}" class="song-cover" loading="lazy" alt="Cover" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect fill=%22%23222%22 width=%22100%22 height=%22100%22/><text y=%22.7em%22 font-size=%2270%22 x=%2215%22 fill=%22%23555%22>🎵</text></svg>'">
+        <div class="song-info">
+          <div class="song-title">${escapeHtml(song.name)}</div>
+          <div class="song-artist">
+            <span class="badge-flac">${song.format || 'FLAC / HQ'}</span>
+            <span>${escapeHtml(artistName)}</span>
+          </div>
+        </div>
+        <div class="song-actions">
+          <button class="action-btn play-btn" title="Play">▶</button>
+          <button class="action-btn dl-btn" title="Download directly to iPhone">⬇</button>
+        </div>
+      `;
+
+      card.querySelector('.play-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        playSong(idx);
+      });
+      card.addEventListener('click', () => {
+        playSong(idx);
+      });
+      card.querySelector('.dl-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        downloadSong(song);
+      });
+
+      return card;
+    }
+
     // Render Song List
     function renderSongList(songs) {
       songList.innerHTML = '';
       songs.forEach((song, idx) => {
-        const card = document.createElement('div');
-        card.className = `song-card ${idx === currentIndex ? 'playing' : ''}`;
-        card.dataset.index = idx;
+        songList.appendChild(createSongCard(song, idx));
+      });
+    }
 
-        const artistName = Array.isArray(song.artist) ? song.artist.join(' / ') : (song.artist || 'Unknown');
-        const picUrl = song.pic_url || (song.pic_id ? `/api/pic?source=${song.source || currentSource}&id=${encodeURIComponent(song.pic_id)}` : 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect fill="%23222" width="100" height="100"/><text y=".7em" font-size="70" x="15" fill="%23555">🎵</text></svg>');
-
-        card.innerHTML = `
-          <img src="${picUrl}" class="song-cover" loading="lazy" alt="Cover" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect fill=%22%23222%22 width=%22100%22 height=%22100%22/><text y=%22.7em%22 font-size=%2270%22 x=%2215%22 fill=%22%23555%22>🎵</text></svg>'">
-          <div class="song-info">
-            <div class="song-title">${escapeHtml(song.name)}</div>
-            <div class="song-artist">
-              <span class="badge-flac">${song.format || 'FLAC / HQ'}</span>
-              <span>${escapeHtml(artistName)}</span>
-            </div>
-          </div>
-          <div class="song-actions">
-            <button class="action-btn play-btn" title="Play">▶</button>
-            <button class="action-btn dl-btn" title="Download directly to iPhone">⬇</button>
-          </div>
-        `;
-
-        // Click card or Play button to play
-        card.querySelector('.play-btn').addEventListener('click', (e) => {
-          e.stopPropagation();
-          playSong(idx);
-        });
-        card.addEventListener('click', () => {
-          playSong(idx);
-        });
-
-        // Click Download button
-        card.querySelector('.dl-btn').addEventListener('click', (e) => {
-          e.stopPropagation();
-          downloadSong(song);
-        });
-
-        songList.appendChild(card);
+    // Append Song Cards for Pagination
+    function appendSongCards(newSongs, startIdx) {
+      newSongs.forEach((song, i) => {
+        songList.appendChild(createSongCard(song, startIdx + i));
       });
     }
 
@@ -1291,8 +1385,9 @@
         .replace(/'/g, '&#039;');
     }
 
-    // Initial search for hot songs
-    doSearch('周杰伦');
+    // Initial state: clean screen, prompt user to search
+    sectionLabel.textContent = "Explore Music";
+    emptyState.style.display = "block";
   </script>
 </body>
 </html>
