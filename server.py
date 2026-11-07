@@ -58,7 +58,12 @@ class MusicHostHandler(http.server.BaseHTTPRequestHandler):
         self.do_GET()
 
     def do_GET(self):
-        parsed = urllib.parse.urlparse(self.path)
+        path_str = self.path
+        try:
+            path_str = path_str.encode("iso-8859-1").decode("utf-8")
+        except Exception:
+            pass
+        parsed = urllib.parse.urlparse(path_str)
         path = parsed.path
         query = urllib.parse.parse_qs(parsed.query)
 
@@ -307,13 +312,7 @@ class MusicHostHandler(http.server.BaseHTTPRequestHandler):
             pass
         self.send_error(404, "Pic not found")
 
-    def handle_lyric(self, query):
-        source = query.get("source", ["netease"])[0]
-        lyric_id = query.get("id", [""])[0]
-        if not lyric_id:
-            self.send_json({"error": "Missing lyric id"})
-            return
-
+    def fetch_lyric_data(self, source: str, lyric_id: str) -> Dict[str, Any]:
         # Try GDStudio
         try:
             api_url = f"{API_BASE}?types=lyric&source={source}&id={lyric_id}"
@@ -321,8 +320,7 @@ class MusicHostHandler(http.server.BaseHTTPRequestHandler):
             with urllib.request.urlopen(req, timeout=6) as r:
                 data = json.loads(r.read().decode())
                 if data.get("lyric"):
-                    self.send_json({"success": True, "data": data})
-                    return
+                    return data
         except Exception:
             pass
 
@@ -334,31 +332,75 @@ class MusicHostHandler(http.server.BaseHTTPRequestHandler):
                 res = json.loads(r.read().decode())
                 lrc = res.get("lrc", {}).get("lyric", "")
                 tlyric = res.get("tlyric", {}).get("lyric", "")
-                self.send_json({"success": True, "data": {"lyric": lrc, "tlyric": tlyric}})
-                return
+                return {"lyric": lrc, "tlyric": tlyric}
         except Exception as e:
-            self.send_json({"success": False, "error": str(e)})
+            print(f"Fetch lyric error for {lyric_id}: {e}")
+        return {"lyric": "", "tlyric": ""}
+
+    def handle_lyric(self, query):
+        source = query.get("source", ["netease"])[0]
+        lyric_id = query.get("id", [""])[0]
+        if not lyric_id:
+            self.send_json({"error": "Missing lyric id"})
+            return
+
+        data = self.fetch_lyric_data(source, lyric_id)
+        if data.get("lyric"):
+            self.send_json({"success": True, "data": data})
+        else:
+            self.send_json({"success": False, "error": "Lyric not found"})
 
     def handle_stream(self, query, is_download: bool = False):
         source = query.get("source", ["netease"])[0]
         song_id = query.get("id", [""])[0]
         name = query.get("name", ["Song"])[0]
         artist = query.get("artist", ["Artist"])[0]
+        fmt = query.get("format", ["flac"])[0].lower()
 
         if not song_id:
             self.send_error(400, "Missing id")
             return
 
+        # Handle lyric download
+        if is_download and fmt == "lrc":
+            lyric_id = query.get("lyric_id", [song_id])[0]
+            lyric_data = self.fetch_lyric_data(source, lyric_id)
+            lyric_text = lyric_data.get("lyric", "")
+            if not lyric_text:
+                lyric_text = f"[00:00.00]{name} - {artist}\n[00:05.00]Instrumental / No lyrics available\n"
+            fname = f"{artist} - {name}.lrc".replace('/', '_').replace('"', '')
+            quoted = urllib.parse.quote(fname)
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Disposition", f'attachment; filename="{quoted}"; filename*=UTF-8\'\'{quoted}')
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(lyric_text.encode("utf-8"))
+            return
+
         try:
-            song_info = self.fetch_audio_url(source, song_id, name, artist)
-            stream_url = song_info.get("url")
+            # Format selection logic
+            if is_download and fmt in ("mp3", "320", "128"):
+                # Try Kuwo MP3 or NetEase outer MP3
+                stream_url = self.match_kuwo_url(name, artist)
+                if not stream_url:
+                    song_info = self.fetch_audio_url(source, song_id, name, artist)
+                    stream_url = song_info.get("url")
+                ext = "mp3"
+                content_type = "audio/mpeg"
+                bitrate_tag = " (320k)" if fmt in ("mp3", "320") else " (128k)"
+            else:
+                # Default / FLAC lossless
+                song_info = self.fetch_audio_url(source, song_id, name, artist)
+                stream_url = song_info.get("url")
+                is_flac = ".flac" in (stream_url or "").lower() or song_info.get("br", 0) >= 800
+                ext = "flac" if is_flac else "mp3"
+                content_type = "audio/flac" if is_flac else "audio/mpeg"
+                bitrate_tag = ""
+
             if not stream_url:
                 self.send_error(404, "Song stream not found")
                 return
-
-            is_flac = ".flac" in stream_url.lower() or song_info.get("br", 0) >= 800
-            ext = "flac" if is_flac else "mp3"
-            content_type = "audio/flac" if is_flac else "audio/mpeg"
 
             headers = {
                 "User-Agent": BROWSER_HEADERS["User-Agent"],
@@ -387,7 +429,7 @@ class MusicHostHandler(http.server.BaseHTTPRequestHandler):
                 self.send_header("Access-Control-Allow-Origin", "*")
 
                 if is_download:
-                    filename = f"{artist} - {name}.{ext}".replace('/', '_').replace('"', '')
+                    filename = f"{artist} - {name}{bitrate_tag}.{ext}".replace('/', '_').replace('"', '')
                     quoted = urllib.parse.quote(filename)
                     self.send_header("Content-Disposition", f'attachment; filename="{quoted}"; filename*=UTF-8\'\'{quoted}')
 
