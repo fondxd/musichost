@@ -754,7 +754,7 @@
         card.dataset.index = idx;
 
         const artistName = Array.isArray(song.artist) ? song.artist.join(' / ') : (song.artist || 'Unknown');
-        const picUrl = song.pic_id ? `/api/pic?source=${song.source || currentSource}&id=${song.pic_id}` : 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect fill="%23222" width="100" height="100"/><text y=".7em" font-size="70" x="15" fill="%23555">🎵</text></svg>';
+        const picUrl = song.pic_url || (song.pic_id ? `/api/pic?source=${song.source || currentSource}&id=${encodeURIComponent(song.pic_id)}` : 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect fill="%23222" width="100" height="100"/><text y=".7em" font-size="70" x="15" fill="%23555">🎵</text></svg>');
 
         card.innerHTML = `
           <img src="${picUrl}" class="song-cover" loading="lazy" alt="Cover" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect fill=%22%23222%22 width=%22100%22 height=%22100%22/><text y=%22.7em%22 font-size=%2270%22 x=%2215%22 fill=%22%23555%22>🎵</text></svg>'">
@@ -804,7 +804,7 @@
       lyricSongTitle.textContent = song.name;
       lyricArtistName.textContent = artistName;
 
-      const picUrl = song.pic_id ? `/api/pic?source=${song.source || currentSource}&id=${song.pic_id}` : 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect fill="%23222" width="100" height="100"/><text y=".7em" font-size="70" x="15" fill="%23555">🎵</text></svg>';
+      const picUrl = song.pic_url || (song.pic_id ? `/api/pic?source=${song.source || currentSource}&id=${encodeURIComponent(song.pic_id)}` : 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect fill="%23222" width="100" height="100"/><text y=".7em" font-size="70" x="15" fill="%23555">🎵</text></svg>');
       playerCover.src = picUrl;
       ambientBg.style.backgroundImage = `url("${picUrl}")`;
 
