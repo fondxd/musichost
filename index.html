@@ -1,0 +1,1004 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Music Host">
+  <title>Music Host • Stream & Download</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎵</text></svg>">
+  <style>
+    :root {
+      --primary: #fa2d48; /* Apple Music Red/Pink */
+      --primary-gradient: linear-gradient(135deg, #ff2d55, #ff375f);
+      --bg: #000000;
+      --card-bg: rgba(28, 28, 30, 0.7);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --text: #ffffff;
+      --text-muted: #8e8e93;
+      --player-bg: rgba(22, 22, 24, 0.85);
+      --safe-bottom: env(safe-area-inset-bottom, 20px);
+      --safe-top: env(safe-area-inset-top, 20px);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Segoe UI", Roboto, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+      padding-top: calc(var(--safe-top) + 16px);
+      padding-bottom: calc(var(--safe-bottom) + 100px);
+      position: relative;
+    }
+
+    /* Ambient background blur */
+    .ambient-bg {
+      position: fixed;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background-size: cover;
+      background-position: center;
+      filter: blur(80px) brightness(0.25);
+      z-index: -1;
+      opacity: 0.8;
+      transition: background-image 0.8s ease;
+      transform: scale(1.1);
+    }
+
+    .container {
+      max-width: 680px;
+      margin: 0 auto;
+      padding: 0 16px;
+    }
+
+    /* Header */
+    header {
+      margin-bottom: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .brand-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      background: var(--primary-gradient);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      box-shadow: 0 4px 14px rgba(255, 45, 85, 0.4);
+    }
+
+    .brand-title {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+
+    .status-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: #30d158;
+      background: rgba(48, 209, 88, 0.12);
+      padding: 4px 10px;
+      border-radius: 20px;
+      border: 1px solid rgba(48, 209, 88, 0.25);
+    }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      background: #30d158;
+      border-radius: 50%;
+      box-shadow: 0 0 8px #30d158;
+    }
+
+    /* Search Box */
+    .search-wrap {
+      position: relative;
+      margin-bottom: 16px;
+    }
+
+    .search-input {
+      width: 100%;
+      height: 48px;
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 0 48px 0 44px;
+      font-size: 16px;
+      color: #fff;
+      outline: none;
+      transition: all 0.2s;
+    }
+
+    .search-input:focus {
+      background: rgba(255, 255, 255, 0.15);
+      border-color: rgba(255, 45, 85, 0.5);
+      box-shadow: 0 0 0 3px rgba(255, 45, 85, 0.2);
+    }
+
+    .search-icon {
+      position: absolute;
+      left: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 18px;
+      color: var(--text-muted);
+      pointer-events: none;
+    }
+
+    .search-clear {
+      position: absolute;
+      right: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: rgba(255, 255, 255, 0.2);
+      border: none;
+      color: #fff;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    /* Source Tabs */
+    .tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 20px;
+      overflow-x: auto;
+      padding-bottom: 4px;
+      scrollbar-width: none;
+    }
+    .tabs::-webkit-scrollbar { display: none; }
+
+    .tab-btn {
+      padding: 8px 16px;
+      border-radius: 20px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--card-border);
+      color: var(--text-muted);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.2s;
+    }
+
+    .tab-btn.active {
+      background: #fff;
+      color: #000;
+      border-color: #fff;
+      box-shadow: 0 2px 10px rgba(255, 255, 255, 0.2);
+    }
+
+    /* Section Title */
+    .section-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    /* Song List */
+    .song-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .song-card {
+      display: flex;
+      align-items: center;
+      padding: 10px 12px;
+      background: var(--card-bg);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      gap: 12px;
+      transition: transform 0.15s, background 0.15s;
+    }
+
+    .song-card:active {
+      transform: scale(0.98);
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    .song-card.playing {
+      border-color: rgba(255, 45, 85, 0.6);
+      background: rgba(255, 45, 85, 0.1);
+    }
+
+    .song-cover {
+      width: 52px;
+      height: 52px;
+      border-radius: 10px;
+      object-fit: cover;
+      background: #222;
+      flex-shrink: 0;
+    }
+
+    .song-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .song-title {
+      font-size: 16px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 4px;
+    }
+
+    .song-artist {
+      font-size: 13px;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .badge-flac {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: rgba(255, 45, 85, 0.2);
+      color: #ff375f;
+      border: 1px solid rgba(255, 45, 85, 0.4);
+    }
+
+    .song-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .action-btn {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.1);
+      border: none;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 16px;
+      transition: background 0.2s, transform 0.1s;
+    }
+
+    .action-btn:active {
+      transform: scale(0.9);
+      background: rgba(255, 255, 255, 0.25);
+    }
+
+    .action-btn.play-btn {
+      background: var(--primary-gradient);
+      box-shadow: 0 4px 12px rgba(255, 45, 85, 0.35);
+    }
+
+    .action-btn.dl-btn {
+      background: rgba(255, 255, 255, 0.12);
+      color: #30d158;
+    }
+
+    /* Floating Player Bar */
+    .player-bar {
+      position: fixed;
+      bottom: calc(var(--safe-bottom) + 12px);
+      left: 16px;
+      right: 16px;
+      max-width: 648px;
+      margin: 0 auto;
+      height: 64px;
+      background: var(--player-bg);
+      backdrop-filter: blur(30px);
+      -webkit-backdrop-filter: blur(30px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 18px;
+      display: flex;
+      align-items: center;
+      padding: 0 14px;
+      gap: 12px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+      z-index: 100;
+      transform: translateY(120%);
+      transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .player-bar.active {
+      transform: translateY(0);
+    }
+
+    .player-cover {
+      width: 44px;
+      height: 44px;
+      border-radius: 8px;
+      object-fit: cover;
+      cursor: pointer;
+    }
+
+    .player-info {
+      flex: 1;
+      min-width: 0;
+      cursor: pointer;
+    }
+
+    .player-title {
+      font-size: 14px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .player-artist {
+      font-size: 12px;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .player-controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .player-btn {
+      background: none;
+      border: none;
+      color: #fff;
+      font-size: 22px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 6px;
+    }
+
+    .player-btn.play-toggle {
+      font-size: 28px;
+      color: var(--primary);
+    }
+
+    .progress-bar-wrap {
+      position: absolute;
+      top: 0;
+      left: 14px;
+      right: 14px;
+      height: 3px;
+      background: rgba(255, 255, 255, 0.1);
+      cursor: pointer;
+    }
+
+    .progress-bar {
+      height: 100%;
+      background: var(--primary);
+      width: 0%;
+      border-radius: 2px;
+    }
+
+    /* Lyrics Modal */
+    .lyrics-modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.95);
+      backdrop-filter: blur(40px);
+      -webkit-backdrop-filter: blur(40px);
+      z-index: 200;
+      display: flex;
+      flex-direction: column;
+      padding: calc(var(--safe-top) + 20px) 20px calc(var(--safe-bottom) + 30px);
+      transform: translateY(100%);
+      transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .lyrics-modal.open {
+      transform: translateY(0);
+    }
+
+    .lyrics-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+
+    .close-btn {
+      background: rgba(255, 255, 255, 0.15);
+      border: none;
+      color: #fff;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      font-size: 16px;
+      cursor: pointer;
+    }
+
+    .lyrics-content {
+      flex: 1;
+      overflow-y: auto;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      padding: 40px 0;
+      mask-image: linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%);
+      -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%);
+    }
+
+    .lyric-line {
+      font-size: 18px;
+      color: rgba(255, 255, 255, 0.4);
+      line-height: 1.5;
+      font-weight: 600;
+      transition: all 0.3s ease;
+    }
+
+    .lyric-line.active {
+      color: #fff;
+      font-size: 24px;
+      transform: scale(1.05);
+      text-shadow: 0 0 15px rgba(255, 255, 255, 0.3);
+    }
+
+    /* Empty state */
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--text-muted);
+    }
+    .empty-icon { font-size: 48px; margin-bottom: 12px; }
+
+    /* Loading Spinner */
+    .spinner {
+      width: 24px;
+      height: 24px;
+      border: 3px solid rgba(255, 255, 255, 0.2);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 40px auto;
+      display: none;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="ambient-bg" id="ambientBg"></div>
+
+  <div class="container">
+    <!-- Header -->
+    <header>
+      <div class="brand">
+        <div class="brand-icon">🎵</div>
+        <div>
+          <div class="brand-title">Music Host</div>
+          <div style="font-size: 11px; color: var(--text-muted);">Mac Server &bull; Lossless FLAC</div>
+        </div>
+      </div>
+      <div class="status-badge">
+        <div class="status-dot"></div>
+        <span>Online</span>
+      </div>
+    </header>
+
+    <!-- Search Input -->
+    <div class="search-wrap">
+      <span class="search-icon">🔍</span>
+      <input type="text" class="search-input" id="searchInput" placeholder="Search songs, artists, albums..." enterkeyhint="search" autocomplete="off">
+      <button class="search-clear" id="searchClear">&times;</button>
+    </div>
+
+    <!-- Source Tabs -->
+    <div class="tabs">
+      <button class="tab-btn active" data-source="netease">NetEase (网易云)</button>
+      <button class="tab-btn" data-source="kugou">KuGou (酷狗)</button>
+      <button class="tab-btn" data-source="local">Mac Library (本地音乐)</button>
+    </div>
+
+    <!-- Section Title -->
+    <div class="section-title">
+      <span id="sectionLabel">Recommended / Search Results</span>
+      <span id="resultCount" style="font-size: 12px; text-transform: none;"></span>
+    </div>
+
+    <!-- Spinner -->
+    <div class="spinner" id="spinner"></div>
+
+    <!-- Song List Container -->
+    <div class="song-list" id="songList"></div>
+
+    <!-- Empty State -->
+    <div class="empty-state" id="emptyState">
+      <div class="empty-icon">🎧</div>
+      <div style="font-size: 17px; font-weight: 600; margin-bottom: 6px;">Type above to search</div>
+      <div style="font-size: 13px;">Stream or tap ⬇ to download FLAC songs directly onto your phone</div>
+    </div>
+  </div>
+
+  <!-- Floating Player Bar -->
+  <div class="player-bar" id="playerBar">
+    <div class="progress-bar-wrap" id="progressWrap">
+      <div class="progress-bar" id="progressBar"></div>
+    </div>
+    <img src="" class="player-cover" id="playerCover" alt="Cover">
+    <div class="player-info" id="playerInfo">
+      <div class="player-title" id="playerTitle">Song Title</div>
+      <div class="player-artist" id="playerArtist">Artist Name</div>
+    </div>
+    <div class="player-controls">
+      <button class="player-btn" id="btnPrev">⏮</button>
+      <button class="player-btn play-toggle" id="btnPlayToggle">▶</button>
+      <button class="player-btn" id="btnNext">⏭</button>
+      <button class="player-btn" id="btnLyrics">💬</button>
+    </div>
+  </div>
+
+  <!-- Lyrics Modal -->
+  <div class="lyrics-modal" id="lyricsModal">
+    <div class="lyrics-header">
+      <div style="text-align: left;">
+        <div id="lyricSongTitle" style="font-size: 17px; font-weight: 700;">Title</div>
+        <div id="lyricArtistName" style="font-size: 13px; color: var(--text-muted);">Artist</div>
+      </div>
+      <button class="close-btn" id="btnCloseLyrics">&times;</button>
+    </div>
+    <div class="lyrics-content" id="lyricsContent">
+      <div class="lyric-line">No lyrics available</div>
+    </div>
+  </div>
+
+  <!-- Hidden Audio Element -->
+  <audio id="audioPlayer" preload="auto"></audio>
+
+  <script>
+    // App State
+    let currentSource = 'netease';
+    let currentSongs = [];
+    let currentIndex = -1;
+    let isPlaying = false;
+    let parsedLyrics = [];
+
+    const searchInput = document.getElementById('searchInput');
+    const searchClear = document.getElementById('searchClear');
+    const tabBtns = document.querySelectorAll('.tab-btn');
+    const songList = document.getElementById('songList');
+    const emptyState = document.getElementById('emptyState');
+    const spinner = document.getElementById('spinner');
+    const resultCount = document.getElementById('resultCount');
+    const sectionLabel = document.getElementById('sectionLabel');
+    const ambientBg = document.getElementById('ambientBg');
+
+    // Player Elements
+    const audio = document.getElementById('audioPlayer');
+    const playerBar = document.getElementById('playerBar');
+    const playerCover = document.getElementById('playerCover');
+    const playerTitle = document.getElementById('playerTitle');
+    const playerArtist = document.getElementById('playerArtist');
+    const btnPlayToggle = document.getElementById('btnPlayToggle');
+    const btnPrev = document.getElementById('btnPrev');
+    const btnNext = document.getElementById('btnNext');
+    const btnLyrics = document.getElementById('btnLyrics');
+    const progressBar = document.getElementById('progressBar');
+    const progressWrap = document.getElementById('progressWrap');
+
+    // Lyrics Elements
+    const lyricsModal = document.getElementById('lyricsModal');
+    const btnCloseLyrics = document.getElementById('btnCloseLyrics');
+    const lyricsContent = document.getElementById('lyricsContent');
+    const lyricSongTitle = document.getElementById('lyricSongTitle');
+    const lyricArtistName = document.getElementById('lyricArtistName');
+
+    // Source Tabs Switch
+    tabBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        tabBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentSource = btn.dataset.source;
+        if (currentSource === 'local') {
+          loadLocalSongs();
+        } else if (searchInput.value.trim()) {
+          doSearch(searchInput.value.trim());
+        }
+      });
+    });
+
+    // Search Input Handling
+    let searchTimeout = null;
+    searchInput.addEventListener('input', () => {
+      searchClear.style.display = searchInput.value ? 'flex' : 'none';
+      clearTimeout(searchTimeout);
+      if (!searchInput.value.trim()) {
+        songList.innerHTML = '';
+        emptyState.style.display = 'block';
+        resultCount.textContent = '';
+        return;
+      }
+      searchTimeout = setTimeout(() => {
+        doSearch(searchInput.value.trim());
+      }, 450);
+    });
+
+    searchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        searchInput.blur();
+        doSearch(searchInput.value.trim());
+      }
+    });
+
+    searchClear.addEventListener('click', () => {
+      searchInput.value = '';
+      searchClear.style.display = 'none';
+      songList.innerHTML = '';
+      emptyState.style.display = 'block';
+      resultCount.textContent = '';
+      searchInput.focus();
+    });
+
+    // Perform Search
+    async function doSearch(query) {
+      if (currentSource === 'local') return;
+      spinner.style.display = 'block';
+      emptyState.style.display = 'none';
+      songList.innerHTML = '';
+      sectionLabel.textContent = `Search results for "${query}"`;
+
+      try {
+        const res = await fetch(`/api/search?q=${encodeURIComponent(query)}&source=${currentSource}`);
+        const json = await res.json();
+        spinner.style.display = 'none';
+
+        if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+          currentSongs = json.data;
+          resultCount.textContent = `${json.data.length} songs`;
+          renderSongList(json.data);
+        } else {
+          songList.innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div><div>No songs found</div></div>`;
+          resultCount.textContent = '0 songs';
+        }
+      } catch (err) {
+        spinner.style.display = 'none';
+        songList.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><div>Network error: ${err.message}</div></div>`;
+      }
+    }
+
+    // Load Local Mac Songs
+    async function loadLocalSongs() {
+      spinner.style.display = 'block';
+      emptyState.style.display = 'none';
+      songList.innerHTML = '';
+      sectionLabel.textContent = "Mac ~/Music Library";
+
+      try {
+        const res = await fetch('/api/local');
+        const json = await res.json();
+        spinner.style.display = 'none';
+
+        if (json.success && json.songs && json.songs.length > 0) {
+          resultCount.textContent = `${json.songs.length} files`;
+          currentSongs = json.songs.map(s => ({
+            id: s.path,
+            name: s.name,
+            artist: ['Mac Library'],
+            isLocal: true,
+            format: s.format
+          }));
+          renderSongList(currentSongs);
+        } else {
+          songList.innerHTML = `<div class="empty-state"><div class="empty-icon">📁</div><div>No local music found in ~/Music.<br>Download songs in Alger Music or put audio files in ~/Music.</div></div>`;
+          resultCount.textContent = '0 files';
+        }
+      } catch (err) {
+        spinner.style.display = 'none';
+        songList.innerHTML = `<div class="empty-state">Failed to load local music</div>`;
+      }
+    }
+
+    // Render Song List
+    function renderSongList(songs) {
+      songList.innerHTML = '';
+      songs.forEach((song, idx) => {
+        const card = document.createElement('div');
+        card.className = `song-card ${idx === currentIndex ? 'playing' : ''}`;
+        card.dataset.index = idx;
+
+        const artistName = Array.isArray(song.artist) ? song.artist.join(' / ') : (song.artist || 'Unknown');
+        const picUrl = song.pic_id ? `/api/pic?source=${song.source || currentSource}&id=${song.pic_id}` : 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect fill="%23222" width="100" height="100"/><text y=".7em" font-size="70" x="15" fill="%23555">🎵</text></svg>';
+
+        card.innerHTML = `
+          <img src="${picUrl}" class="song-cover" loading="lazy" alt="Cover" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect fill=%22%23222%22 width=%22100%22 height=%22100%22/><text y=%22.7em%22 font-size=%2270%22 x=%2215%22 fill=%22%23555%22>🎵</text></svg>'">
+          <div class="song-info">
+            <div class="song-title">${escapeHtml(song.name)}</div>
+            <div class="song-artist">
+              <span class="badge-flac">${song.format || 'FLAC / HQ'}</span>
+              <span>${escapeHtml(artistName)}</span>
+            </div>
+          </div>
+          <div class="song-actions">
+            <button class="action-btn play-btn" title="Play">▶</button>
+            <button class="action-btn dl-btn" title="Download directly to iPhone">⬇</button>
+          </div>
+        `;
+
+        // Click card or Play button to play
+        card.querySelector('.play-btn').addEventListener('click', (e) => {
+          e.stopPropagation();
+          playSong(idx);
+        });
+        card.addEventListener('click', () => {
+          playSong(idx);
+        });
+
+        // Click Download button
+        card.querySelector('.dl-btn').addEventListener('click', (e) => {
+          e.stopPropagation();
+          downloadSong(song);
+        });
+
+        songList.appendChild(card);
+      });
+    }
+
+    // Play Song
+    async function playSong(idx) {
+      if (idx < 0 || idx >= currentSongs.length) return;
+      currentIndex = idx;
+      const song = currentSongs[idx];
+      const artistName = Array.isArray(song.artist) ? song.artist.join(' / ') : (song.artist || 'Unknown');
+
+      // Update UI
+      playerBar.classList.add('active');
+      playerTitle.textContent = song.name;
+      playerArtist.textContent = artistName;
+      lyricSongTitle.textContent = song.name;
+      lyricArtistName.textContent = artistName;
+
+      const picUrl = song.pic_id ? `/api/pic?source=${song.source || currentSource}&id=${song.pic_id}` : 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect fill="%23222" width="100" height="100"/><text y=".7em" font-size="70" x="15" fill="%23555">🎵</text></svg>';
+      playerCover.src = picUrl;
+      ambientBg.style.backgroundImage = `url("${picUrl}")`;
+
+      // Highlight active card
+      document.querySelectorAll('.song-card').forEach((c, i) => {
+        c.classList.toggle('playing', i === idx);
+      });
+
+      // Stream URL
+      let streamUrl = '';
+      if (song.isLocal) {
+        streamUrl = `/api/local/file?file=${encodeURIComponent(song.id)}`;
+      } else {
+        streamUrl = `/api/stream?source=${song.source || currentSource}&id=${song.id}&name=${encodeURIComponent(song.name)}&artist=${encodeURIComponent(artistName)}`;
+      }
+
+      audio.src = streamUrl;
+      try {
+        await audio.play();
+        isPlaying = true;
+        btnPlayToggle.textContent = '⏸';
+      } catch (err) {
+        console.error('Play failed:', err);
+      }
+
+      // iOS MediaSession Support (Lock Screen Controls)
+      if ('mediaSession' in navigator) {
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: song.name,
+          artist: artistName,
+          album: song.album || 'Music Host',
+          artwork: [{ src: picUrl, sizes: '512x512', type: 'image/jpeg' }]
+        });
+
+        navigator.mediaSession.setActionHandler('play', () => { audio.play(); isPlaying = true; btnPlayToggle.textContent = '⏸'; });
+        navigator.mediaSession.setActionHandler('pause', () => { audio.pause(); isPlaying = false; btnPlayToggle.textContent = '▶'; });
+        navigator.mediaSession.setActionHandler('previoustrack', () => playSong(currentIndex - 1));
+        navigator.mediaSession.setActionHandler('nexttrack', () => playSong(currentIndex + 1));
+      }
+
+      // Fetch Lyrics
+      loadLyrics(song);
+    }
+
+    // Direct Download
+    function downloadSong(song) {
+      const artistName = Array.isArray(song.artist) ? song.artist.join(' / ') : (song.artist || 'Unknown');
+      let dlUrl = '';
+      if (song.isLocal) {
+        dlUrl = `/api/local/file?file=${encodeURIComponent(song.id)}&download=1`;
+      } else {
+        dlUrl = `/api/download?source=${song.source || currentSource}&id=${song.id}&name=${encodeURIComponent(song.name)}&artist=${encodeURIComponent(artistName)}`;
+      }
+
+      // Trigger native download prompt in Safari
+      const a = document.createElement('a');
+      a.href = dlUrl;
+      a.setAttribute('download', `${artistName} - ${song.name}`);
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+
+    // Lyrics Fetching & Parsing
+    async function loadLyrics(song) {
+      lyricsContent.innerHTML = '<div class="lyric-line">Loading lyrics...</div>';
+      parsedLyrics = [];
+      if (song.isLocal || !song.lyric_id) {
+        lyricsContent.innerHTML = '<div class="lyric-line">No lyrics available</div>';
+        return;
+      }
+      try {
+        const res = await fetch(`/api/lyric?source=${song.source || currentSource}&id=${song.lyric_id}`);
+        const data = await res.json();
+        if (data.success && data.data && data.data.lyric) {
+          parseLrc(data.data.lyric);
+        } else {
+          lyricsContent.innerHTML = '<div class="lyric-line">No lyrics available</div>';
+        }
+      } catch {
+        lyricsContent.innerHTML = '<div class="lyric-line">No lyrics available</div>';
+      }
+    }
+
+    function parseLrc(lrcText) {
+      parsedLyrics = [];
+      lyricsContent.innerHTML = '';
+      const lines = lrcText.split('\n');
+      lines.forEach(line => {
+        const match = line.match(/\[(\d{2}):(\d{2})(\.\d{1,3})?\](.*)/);
+        if (match) {
+          const m = parseInt(match[1]);
+          const s = parseInt(match[2]);
+          const ms = match[3] ? parseFloat(match[3]) : 0;
+          const time = m * 60 + s + ms;
+          const text = match[4].trim();
+          if (text) {
+            parsedLyrics.push({ time, text });
+            const div = document.createElement('div');
+            div.className = 'lyric-line';
+            div.textContent = text;
+            lyricsContent.appendChild(div);
+          }
+        }
+      });
+      if (parsedLyrics.length === 0) {
+        lyricsContent.innerHTML = '<div class="lyric-line">Instrumental / No lyrics</div>';
+      }
+    }
+
+    // Audio Player Events
+    btnPlayToggle.addEventListener('click', () => {
+      if (audio.paused) {
+        audio.play();
+        isPlaying = true;
+        btnPlayToggle.textContent = '⏸';
+      } else {
+        audio.pause();
+        isPlaying = false;
+        btnPlayToggle.textContent = '▶';
+      }
+    });
+
+    btnPrev.addEventListener('click', () => {
+      if (currentIndex > 0) playSong(currentIndex - 1);
+    });
+
+    btnNext.addEventListener('click', () => {
+      if (currentIndex < currentSongs.length - 1) playSong(currentIndex + 1);
+    });
+
+    audio.addEventListener('timeupdate', () => {
+      if (!audio.duration) return;
+      const pct = (audio.currentTime / audio.duration) * 100;
+      progressBar.style.width = pct + '%';
+
+      // Update active lyric
+      if (parsedLyrics.length > 0 && lyricsModal.classList.contains('open')) {
+        const ct = audio.currentTime;
+        let activeIdx = -1;
+        for (let i = 0; i < parsedLyrics.length; i++) {
+          if (ct >= parsedLyrics[i].time) activeIdx = i;
+          else break;
+        }
+        const lines = lyricsContent.querySelectorAll('.lyric-line');
+        lines.forEach((l, i) => {
+          if (i === activeIdx) {
+            l.classList.add('active');
+            l.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          } else {
+            l.classList.remove('active');
+          }
+        });
+      }
+    });
+
+    audio.addEventListener('ended', () => {
+      if (currentIndex < currentSongs.length - 1) {
+        playSong(currentIndex + 1);
+      }
+    });
+
+    // Seek
+    progressWrap.addEventListener('click', (e) => {
+      const rect = progressWrap.getBoundingClientRect();
+      const pct = (e.clientX - rect.left) / rect.width;
+      if (audio.duration) {
+        audio.currentTime = pct * audio.duration;
+      }
+    });
+
+    // Lyrics Modal Toggle
+    [playerCover, playerInfo, btnLyrics].forEach(el => {
+      el.addEventListener('click', () => {
+        lyricsModal.classList.add('open');
+      });
+    });
+
+    btnCloseLyrics.addEventListener('click', () => {
+      lyricsModal.classList.remove('open');
+    });
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    // Initial search for hot songs
+    doSearch('周杰伦');
+  </script>
+</body>
+</html>
