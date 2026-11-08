@@ -24,8 +24,10 @@ PORT = int(os.environ.get("PORT", 8080))
 API_BASE = "https://music-api.gdstudio.xyz/api.php"
 MUSIC_DIR = os.path.expanduser("~/Music")
 
-# Cache for resolved song URLs (15 mins TTL)
+# Caches for URLs, toplist charts, and playlists
 url_cache: Dict[str, Any] = {}
+toplist_cache = {"time": 0, "data": None}
+playlist_cache: Dict[str, Any] = {}
 
 BROWSER_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
@@ -69,6 +71,14 @@ class MusicHostHandler(http.server.BaseHTTPRequestHandler):
 
         if path in ("/", "/index.html"):
             self.serve_index()
+            return
+
+        if path == "/api/toplist":
+            self.handle_toplist()
+            return
+
+        if path == "/api/playlist":
+            self.handle_playlist(query)
             return
 
         if path == "/api/search":
@@ -118,6 +128,138 @@ class MusicHostHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-cache")
         self.end_headers()
         self.wfile.write(content)
+
+    def handle_toplist(self):
+        global toplist_cache
+        now = time.time()
+        if toplist_cache["data"] and (now - toplist_cache["time"] < 3600):
+            self.send_json(toplist_cache["data"])
+            return
+
+        url = "https://music.163.com/api/toplist"
+        try:
+            req = urllib.request.Request(url, headers={
+                "User-Agent": BROWSER_HEADERS["User-Agent"],
+                "Referer": "https://music.163.com/"
+            })
+            with urllib.request.urlopen(req, timeout=8) as r:
+                raw = json.loads(r.read().decode("utf-8"))
+                raw_list = raw.get("list", [])
+
+                official_ids = {19723756, 3779629, 2884035, 3778678}
+                global_ids = {60198, 180106, 60131, 2809513713, 2809577409, 745956260, 5059644681, 27135204}
+                genre_ids = {991319590, 1978921795, 5059633707, 5059661515, 5059642708, 71384707, 71385702, 3001835560, 3001795926, 3812895, 12225155968}
+
+                official = []
+                global_charts = []
+                genre_charts = []
+                other_charts = []
+
+                for item in raw_list:
+                    cid = item.get("id")
+                    tracks = item.get("tracks") or []
+                    preview = []
+                    for t in tracks[:3]:
+                        first = t.get("first", "")
+                        second = t.get("second", "")
+                        if first:
+                            preview.append({"title": first, "artist": second})
+
+                    cdata = {
+                        "id": str(cid),
+                        "name": item.get("name", ""),
+                        "coverImgUrl": item.get("coverImgUrl", ""),
+                        "updateFrequency": item.get("updateFrequency", ""),
+                        "description": item.get("description", ""),
+                        "preview": preview,
+                        "playCount": item.get("playCount", 0)
+                    }
+
+                    if cid in official_ids:
+                        official.append(cdata)
+                    elif cid in global_ids:
+                        global_charts.append(cdata)
+                    elif cid in genre_ids:
+                        genre_charts.append(cdata)
+                    else:
+                        other_charts.append(cdata)
+
+                # Order official charts: 飙升榜, 热歌榜, 新歌榜, 原创榜
+                id_order = {19723756: 0, 3778678: 1, 3779629: 2, 2884035: 3}
+                official.sort(key=lambda x: id_order.get(int(x["id"]), 99))
+
+                result = {
+                    "success": True,
+                    "data": {
+                        "official": official,
+                        "global": global_charts,
+                        "genre": genre_charts,
+                        "other": other_charts,
+                        "all": [c for group in [official, global_charts, genre_charts, other_charts] for c in group]
+                    }
+                }
+                toplist_cache = {"time": now, "data": result}
+                self.send_json(result)
+                return
+        except Exception as e:
+            print(f"Toplist fetch error: {e}")
+            self.send_json({"success": False, "error": str(e), "data": {}})
+
+    def handle_playlist(self, query):
+        pid = query.get("id", [""])[0]
+        if not pid:
+            self.send_json({"success": False, "error": "Missing playlist id"})
+            return
+
+        now = time.time()
+        if pid in playlist_cache and (now - playlist_cache[pid]["time"] < 1800):
+            self.send_json(playlist_cache[pid]["data"])
+            return
+
+        url = f"https://music.163.com/api/playlist/detail?id={pid}"
+        try:
+            req = urllib.request.Request(url, headers={
+                "User-Agent": BROWSER_HEADERS["User-Agent"],
+                "Referer": "https://music.163.com/"
+            })
+            with urllib.request.urlopen(req, timeout=10) as r:
+                raw = json.loads(r.read().decode("utf-8"))
+                res = raw.get("result", {})
+                tracks_raw = res.get("tracks", [])
+
+                tracks = []
+                for t in tracks_raw:
+                    pic_url = t.get("album", {}).get("picUrl", "")
+                    artists = [a.get("name", "") for a in t.get("artists", [])]
+                    tracks.append({
+                        "id": str(t["id"]),
+                        "name": t.get("name", ""),
+                        "artist": artists,
+                        "album": t.get("album", {}).get("name", ""),
+                        "pic_url": pic_url,
+                        "pic_id": pic_url,
+                        "url_id": str(t["id"]),
+                        "lyric_id": str(t["id"]),
+                        "source": "netease",
+                        "format": "FLAC / 320K"
+                    })
+
+                info = {
+                    "id": str(res.get("id", pid)),
+                    "name": res.get("name", "Playlist"),
+                    "coverImgUrl": res.get("coverImgUrl", ""),
+                    "description": res.get("description", ""),
+                    "playCount": res.get("playCount", 0),
+                    "trackCount": len(tracks),
+                    "tracks": tracks
+                }
+                result = {"success": True, "playlist": info}
+                playlist_cache[pid] = {"time": now, "data": result}
+                self.send_json(result)
+                return
+        except Exception as e:
+            print(f"Playlist detail error for {pid}: {e}")
+            self.send_json({"success": False, "error": str(e), "playlist": {}})
 
     def handle_search(self, query):
         q = query.get("q", [""])[0]
